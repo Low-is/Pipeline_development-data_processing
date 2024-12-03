@@ -1,4 +1,4 @@
-The calculate_avg_expression_nested function performs a comprehensize analysis pipeline
+The calculate_avg_expression_nested function performs a comprehensive analysis pipeline
 designed for weighted gene co-expression network analysis (WGCNA), followed by 
 Gene Ontology (GO) enrichment analysis, and the calculation of pathway-level expression
 averages. This function is particularly useful for identifying biologically relevant pathways
