@@ -66,6 +66,7 @@ calculate_avg_expression_nested <- function(exprs_mtx) {
   )
   
   enrichment_res <- list()
+  
   msigdb_data <- msigdbr(species = "Homo sapiens", category = "C5")
   msigdb_pathways <- msigdb_data %>% dplyr::select(gs_name, entrez_gene)
   
@@ -104,6 +105,7 @@ calculate_avg_expression_nested <- function(exprs_mtx) {
   })
   
   top_20_pathways_converted <- list()
+  
   for (cluster_name in names(top_20_pathways_IDs)) {
     cluster_entrez_ids <- top_20_pathways_IDs[[cluster_name]]
     converted <- lapply(cluster_entrez_ids, function(entrez_list) {
@@ -118,29 +120,41 @@ calculate_avg_expression_nested <- function(exprs_mtx) {
     top_20_pathways_converted[[cluster_name]] <- converted
   }
   
-  cluster_avg_expr <- list()
+  for (pathway_cluster_id in names(top_20_pathways_GOBP)) {
+      pathways <- sapply(top_20_pathways_GOBP, function(x) x$Description)
+    }
   
-  for (cluster_id in names(top_20_pathways_converted)) {
-    gene_sets <- top_20_pathways_converted[[cluster_id]]
-    pathway_avg <- list()
+cluster_avg_expr <- list()
+
+for (cluster_id in names(top_20_pathways_converted)) {
+  
+  gene_sets <- top_20_pathways_converted[[cluster_id]]
+  
+  names(gene_sets) <- pathways[[cluster_id]]
+  
+  pathway_avg <- list()
+  
+  # Loop through each pathway in the cluster to assign actual pathway names
+  for (pathway_name in names(gene_sets)) {
     
-    for (gene_set_ind in 1:length(gene_sets)) {
-      gene_set <- gene_sets[[gene_set_ind]]
-      
-      genes_in_intersection <- intersect(gene_set, rownames(exprs_mtx))
-      
-      gene_set_name <- paste0("Gene_Set_", gene_set_ind)
-      
-      if (length(genes_in_intersection) > 0) {
-        exprs_mtx_fil <- exprs_mtx[genes_in_intersection, , drop = FALSE]
+    gene_set <- gene_sets[[pathway_name]]
+    
+    print(paste("Processing pathway:", pathway_name))
+    
+    genes_in_intersection <- intersect(gene_set, rownames(exprs_mtx))
+    
+    print(genes_in_intersection)
+    
+    for(genes in genes_in_intersection) {
+      if (length(genes) > 0) {
+        exprs_mtx_fil <- exprs_mtx[genes, , drop = FALSE]
         avg_exprs_pathway <- rowMeans(exprs_mtx_fil)
         overall_avg_expr <- mean(avg_exprs_pathway, na.rm = TRUE)
-        pathway_avg[[gene_set_name]] <- overall_avg_expr
+        pathway_avg[[pathway_name]] <- overall_avg_expr
       } else {
-        message("No matching genes found for gene set: ", gene_set_name)
+        message("No matching genes found for pathway: ", pathway_name)
       }
-    }
-    
+    } 
     if (length(pathway_avg) > 0) {
       cluster_avg_expr[[cluster_id]] <- pathway_avg
     } else {
@@ -148,8 +162,14 @@ calculate_avg_expression_nested <- function(exprs_mtx) {
     }
   }
   
-  return(list(
-    cluster_avg_expr = cluster_avg_expr,
-    enrichment_res = enrichment_res
-  ))
+  result_list <- list() 
+  
+  for (cl_avg_ID in names(cluster_avg_expr)) {
+    result_list[[cl_avg_ID]] <- list(
+      cluster_avg_expr = cluster_avg_expr[[cl_avg_ID]],
+      enrichment_res = enrichment_res
+    )
+  }
+}
+return(result_list)
 }
