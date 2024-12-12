@@ -1,13 +1,16 @@
 calculate_avg_expression_nested <- function(exprs_mtx) {
-  library(WGCNA)
-  library(flashClust)
-  library(curl)
-  allowWGCNAThreads()
-  library(AnnotationDbi)
-  library(org.Hs.eg.db)
-  library(clusterProfiler)
-  library(msigdbr)
+# These are libraries that need to be loaded before running this function
+  # library(WGCNA)
+  # library(flashClust)
+  # library(curl)
+  # allowWGCNAThreads()
+  # library(AnnotationDbi)
+  # library(org.Hs.eg.db)
+  # library(clusterProfiler)
+  # library(msigdbr)
+  # library(purrr)
   
+  exprs_mtx <- exprs_mtx
   exprs_mtx_t <- t(exprs_mtx)
   
   # Choose a set of soft-thresholding powers
@@ -70,18 +73,29 @@ calculate_avg_expression_nested <- function(exprs_mtx) {
   msigdb_data <- msigdbr(species = "Homo sapiens", category = "C5")
   msigdb_pathways <- msigdb_data %>% dplyr::select(gs_name, entrez_gene)
   
-  for (cl in unique(module_df_2$cluster)) {
-    cluster_genes <- module_df_2$entrez[module_df_2$cluster == cl]
+  cl <- makeCluster(8)
+  on.exit(stopCluster(cl))
+  
+  clusterExport(cl, c("exprs_mtx", "msigdb_pathways", "module_df_2"),
+                envir = environment())
+  
+  clusterEvalQ(cl, {
+    library(clusterProfiler)
+    library(org.Hs.eg.db)
+    library(dplyr)
+    library(AnnotationDbi)
+  })
+  
+  enrichment_res <- parLapply(cl, unique(module_df_2$cluster), function(x) {
+    cluster_genes <- module_df_2$entrez[module_df_2$cluster == x]
     if (length(cluster_genes) > 0) {
       enricher_res <- enricher(
         gene = cluster_genes,
         TERM2GENE = msigdb_pathways
       )
-      enrichment_res[[paste0("Cluster_", cl)]] <- enricher_res
-    } else {
-      message(paste("No valid genes for cluster:", cl))
+      return(enricher_res)
     }
-  }
+  })
   
   top_20_pathways <- lapply(enrichment_res, function(cluster) {
     cluster_df <- data.frame(cluster@result)
@@ -89,87 +103,71 @@ calculate_avg_expression_nested <- function(exprs_mtx) {
     return(top_20)
   })
   
-  top_20_pathways_GOBP <- lapply(top_20_pathways, function(pathway) {
-    filtered_pathways <- pathway %>% dplyr::filter(grepl("GOBP", Description))
-    if (nrow(filtered_pathways) == 0) {
+  
+  clusterExport(cl, "enrichment_res", environment())
+  
+  top_20_pathways_GOBP <- parLapply(cl, enrichment_res, function(res) {
+    cluster_df <- data.frame(res@result)[1:20, ] %>%
+      dplyr::filter(grepl("GOBP", Description) & p.adjust <= 0.05)
+    if (nrow(cluster_df) == 0) {
       return(NULL)
     }
-    return(filtered_pathways)
+    return(cluster_df)
   })
   
-  top_20_pathways_GOBP <- top_20_pathways_GOBP[!sapply(top_20_pathways_GOBP, is.null)]
+  # Removing NULL list 
+  top_20_pathways_GOBP <- compact(top_20_pathways_GOBP)
   
-  top_20_pathways_IDs <- sapply(top_20_pathways_GOBP, function(pathway) {
-    geneID <- as.character(pathway$geneID)
-    strsplit(geneID, split = "/")
+  pathway_results <- lapply(top_20_pathways_GOBP, function(x) {
+    pathway_name <- x$ID[1]
+    gene_ids <- unlist(strsplit(x$geneID, "/")) 
+    gene_symbols <- mapIds(org.Hs.eg.db, 
+                           keys = gene_ids, 
+                           column = "SYMBOL",
+                           keytype = "ENTREZID",
+                           multiVals = "first")
   })
   
-  top_20_pathways_converted <- list()
+  names(pathway_results) <- sapply(top_20_pathways_GOBP, function(x) x$ID[1])
   
-  for (cluster_name in names(top_20_pathways_IDs)) {
-    cluster_entrez_ids <- top_20_pathways_IDs[[cluster_name]]
-    converted <- lapply(cluster_entrez_ids, function(entrez_list) {
-      entrez_list <- as.character(entrez_list)
-      mapIds(
-        org.Hs.eg.db,
-        keys = entrez_list,
-        column = "SYMBOL",
-        keytype = "ENTREZID"
-      )
-    })
-    top_20_pathways_converted[[cluster_name]] <- converted
-  }
+  clusterExport(cl, "pathway_results", environment())
   
-  for (pathway_cluster_id in names(top_20_pathways_GOBP)) {
-      pathways <- sapply(top_20_pathways_GOBP, function(x) x$Description)
-    }
-  
-cluster_avg_expr <- list()
-
-for (cluster_id in names(top_20_pathways_converted)) {
-  
-  gene_sets <- top_20_pathways_converted[[cluster_id]]
-  
-  names(gene_sets) <- pathways[[cluster_id]]
-  
-  pathway_avg <- list()
-  
-  # Loop through each pathway in the cluster to assign actual pathway names
-  for (pathway_name in names(gene_sets)) {
-    
-    gene_set <- gene_sets[[pathway_name]]
-    
-    print(paste("Processing pathway:", pathway_name))
-    
-    genes_in_intersection <- intersect(gene_set, rownames(exprs_mtx))
-    
-    print(genes_in_intersection)
-    
-    for(genes in genes_in_intersection) {
-      if (length(genes) > 0) {
-        exprs_mtx_fil <- exprs_mtx[genes, , drop = FALSE]
-        avg_exprs_pathway <- rowMeans(exprs_mtx_fil)
+  cluster_avg_expr <- parLapply(cl, pathway_results, function(converted) {
+    lapply(converted, function(gene_set) {
+      genes_in_intersection <- intersect(gene_set, rownames(exprs_mtx))
+      
+      if (length(genes_in_intersection) > 0) {
+        exprs_mtx_fil <- exprs_mtx[genes_in_intersection, , drop = FALSE]
+        avg_exprs_pathway <- colMeans(exprs_mtx_fil, na.rm = TRUE)
         overall_avg_expr <- mean(avg_exprs_pathway, na.rm = TRUE)
-        pathway_avg[[pathway_name]] <- overall_avg_expr
+        
+        return(list(avg_exprs_pathway = avg_exprs_pathway,
+                    overall_avg_expr = overall_avg_expr))
       } else {
-        message("No matching genes found for pathway: ", pathway_name)
+        return(NULL)
       }
-    } 
-    if (length(pathway_avg) > 0) {
-      cluster_avg_expr[[cluster_id]] <- pathway_avg
-    } else {
-      message("No gene sets processed for cluster: ", cluster_id)
-    }
-  }
+    })
+  })
   
-  result_list <- list() 
+  avg_exprs_pathway_list <- lapply(cluster_avg_expr, function(x) {
+    lapply(x, function(y) if (!is.null(y)) return(y$avg_exprs_pathway))
+  })
   
-  for (cl_avg_ID in names(cluster_avg_expr)) {
-    result_list[[cl_avg_ID]] <- list(
-      cluster_avg_expr = cluster_avg_expr[[cl_avg_ID]],
-      enrichment_res = enrichment_res
-    )
-  }
-}
-return(result_list)
+  overall_avg_expr_list <- lapply(cluster_avg_expr, function(x) {
+    lapply(x, function(y) if (!is.null(y)) return(y$overall_avg_expr))
+  })
+  
+  enrichment_res_list <- lapply(enrichment_res, function(x) {
+    top_20_df <- data.frame(x@result) %>%
+      dplyr::filter(grepl("GOBP", Description)) %>%
+      dplyr::arrange(p.adjust) %>%
+      dplyr::slice_head(n = 20)
+    return(top_20_df)
+  })
+  
+  return(list(
+    avg_exprs_pathway = avg_exprs_pathway_list,
+    overall_avg_expr = overall_avg_expr_list,
+    enrichment_res = enrichment_res_list
+  ))
 }
