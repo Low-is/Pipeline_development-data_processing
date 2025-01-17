@@ -21,3 +21,5 @@ helps to identify over-represented biological processes (GO terms) within each g
    providing a pathway-level expression score. This enables the comparison of pathway activity
    across samples, treatments, or data sets.
 5. Results: Output is a list containing the average expression values for each pathway within each gene cluster, along with the associated GO enrichment results.
+![Gene cluster example](zscore_gene_communities.png)
+The plot represents what can be created after using this function. Genes are clustered based on their co-expression patterns, then a pathwway enrichment analysis is performed on those clusters allowing for explicit selection of genes belonging to those pathways to be evaluated in groups of interest. 
