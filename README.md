@@ -25,5 +25,6 @@ Key Components:
    - detect_best_id_column(): auto-detects the matching ID type used in th expression matrix.
 
 Citations:
-1. Ge, Son & Yao, iDEP: an integrated web application for differential expression and pathway analysis of RNA-Seq data, BMC Bioinformatics 19:1-24, 2018.
-2. Howe KL, Achuthan P, Allen J, Alvarez-Jarreta J, et al. Ensembl 2024. Nucleic Acids Res. 2024 Jan;52(D1):D977-D9893.doi:10.1093/nar/gkad1029
+
+1. Ge, Son & Yao, iDEP: an integrated web application for differential expression and pathway analysis of RNA-Seq data, BMC Bioinformatics 19:1-24, 2018. [Ge-Lab.org/iDEP](http://ge-lab.org/idep/)
+2. Howe KL, Achuthan P, Allen J, Alvarez-Jarreta J, et al. Ensembl 2024. Nucleic Acids Res. 2024 Jan;52(D1):D977-D9893.doi:10.1093/nar/gkad1029 [D977-D9893.doi:10.1093/nar/gkad1029](https://doi.org/10.1093/nar/gkad1049)
